@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
-import { wahooAuthorizeUrl } from "@/lib/wahoo";
+import { generatePkce, wahooAuthorizeUrl } from "@/lib/wahoo";
 
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.redirect(wahooAuthorizeUrl());
+  const { verifier, challenge } = generatePkce();
+  const res = NextResponse.redirect(wahooAuthorizeUrl(challenge));
+  res.cookies.set("wahoo_pkce_verifier", verifier, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
+  return res;
 }

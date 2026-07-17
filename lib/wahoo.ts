@@ -1,4 +1,5 @@
 import "server-only";
+import crypto from "node:crypto";
 import { getServiceClient } from "./supabase";
 import type { Modality, WahooTokens } from "./types";
 
@@ -7,7 +8,24 @@ const TOKEN_URL = `${BASE}/oauth/token`;
 
 const g = globalThis as unknown as { __wahooTokens?: WahooTokens };
 
-export function wahooAuthorizeUrl(): string {
+// --- PKCE -----------------------------------------------------------------
+function base64url(buf: Buffer): string {
+  return buf
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+export function generatePkce(): { verifier: string; challenge: string } {
+  const verifier = base64url(crypto.randomBytes(32));
+  const challenge = base64url(
+    crypto.createHash("sha256").update(verifier).digest()
+  );
+  return { verifier, challenge };
+}
+
+export function wahooAuthorizeUrl(codeChallenge: string): string {
   const clientId = process.env.WAHOO_CLIENT_ID!;
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/wahoo/callback`;
   const params = new URLSearchParams({
@@ -15,11 +33,16 @@ export function wahooAuthorizeUrl(): string {
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "user_read workouts_read offline_data",
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
   return `${BASE}/oauth/authorize?${params}`;
 }
 
-export async function exchangeCodeForTokens(code: string): Promise<WahooTokens> {
+export async function exchangeCodeForTokens(
+  code: string,
+  codeVerifier: string
+): Promise<WahooTokens> {
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/wahoo/callback`;
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -30,6 +53,7 @@ export async function exchangeCodeForTokens(code: string): Promise<WahooTokens> 
       client_secret: process.env.WAHOO_CLIENT_SECRET!,
       redirect_uri: redirectUri,
       code,
+      code_verifier: codeVerifier,
     }),
   });
   if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`);

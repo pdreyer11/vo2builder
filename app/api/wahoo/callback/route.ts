@@ -14,10 +14,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/sync?wahoo_error=${error ?? "no_code"}`);
   }
 
+  const verifier = req.cookies.get("wahoo_pkce_verifier")?.value;
+  if (!verifier) {
+    return NextResponse.redirect(`${appUrl}/sync?wahoo_error=missing_verifier`);
+  }
+
   try {
-    const tokens = await exchangeCodeForTokens(code);
+    const tokens = await exchangeCodeForTokens(code, verifier);
     await saveWahooTokens(tokens);
-    return NextResponse.redirect(`${appUrl}/sync?wahoo_connected=1`);
+    const res = NextResponse.redirect(`${appUrl}/sync?wahoo_connected=1`);
+    res.cookies.delete("wahoo_pkce_verifier");
+    return res;
   } catch (err) {
     console.error("Wahoo callback error:", err);
     return NextResponse.redirect(`${appUrl}/sync?wahoo_error=callback_failed`);
