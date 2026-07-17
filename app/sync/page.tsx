@@ -1,28 +1,26 @@
 import TopBar from "@/components/TopBar";
-import SyncView, { type SyncStatus } from "@/components/SyncView";
+import SyncView, { type WahooStatus, type StravaStatus } from "@/components/SyncView";
 import { getSessions, getSyncEvents } from "@/lib/data";
-import { getSummary } from "@/lib/data";
-import { isSupabaseConfigured } from "@/lib/supabase";
 import { getStoredTokens } from "@/lib/strava";
+import { getStoredWahooTokens } from "@/lib/wahoo";
 
 export const dynamic = "force-dynamic";
 
 export default async function SyncPage() {
-  const demo = !isSupabaseConfigured();
-  const [sessions, syncEvents, summary, tokens] = await Promise.all([
+  const [sessions, syncEvents, wahooTokens, stravaTokens] = await Promise.all([
     getSessions(),
     getSyncEvents(),
-    getSummary(),
-    demo ? Promise.resolve(null) : getStoredTokens(),
+    getStoredWahooTokens(),
+    getStoredTokens(),
   ]);
 
-  const status: SyncStatus = {
-    connected: demo ? true : Boolean(tokens),
-    demo,
-    athleteName: demo ? "Demo athlete" : tokens ? `Athlete ${tokens.athlete_id}` : null,
-    lastSyncAt: summary.last_sync_at,
-    activitiesImported: sessions.length,
-    hrStreams: sessions.length,
+  const wahoo: WahooStatus = {
+    connected: Boolean(wahooTokens),
+    lastSyncAt: sessions.length > 0 ? sessions[0].created_at : null,
+  };
+
+  const strava: StravaStatus = {
+    connected: Boolean(stravaTokens),
   };
 
   const nameById = new Map(sessions.map((s) => [s.id, s.name]));
@@ -31,14 +29,15 @@ export default async function SyncPage() {
     session_name: e.session_id ? nameById.get(e.session_id) : undefined,
   }));
 
+  const subtitle = wahoo.connected
+    ? "Wahoo connected · sync ready"
+    : "Connect Wahoo or import a file";
+
   return (
     <>
-      <TopBar
-        title="Strava Sync"
-        subtitle={status.connected ? "Connected · auto-sync enabled" : "Not connected"}
-      />
+      <TopBar title="Import" subtitle={subtitle} />
       <div className="flex-1 overflow-auto">
-        <SyncView status={status} events={events} />
+        <SyncView wahoo={wahoo} strava={strava} events={events} />
       </div>
     </>
   );

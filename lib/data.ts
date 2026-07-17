@@ -7,21 +7,18 @@
 
 import "server-only";
 import { getServiceClient } from "./supabase";
-import {
-  SEED_DETAILS,
-  SEED_EVENTS,
-  SEED_SESSIONS,
-  SEED_SETTINGS,
-  SEED_STREAMS,
-} from "./seed-data";
+import { SEED_SETTINGS } from "./seed-data";
 import type {
   AppSettings,
   EventType,
+  HRSamplePoint,
   HRStream,
+  Modality,
   Session,
   SessionModalityDetail,
   SessionType,
   SessionWithDetail,
+  StreamResolution,
   SummarySnapshot,
   VO2BuilderEvent,
 } from "./types";
@@ -38,14 +35,14 @@ type Store = {
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 // Persist the fallback store across hot reloads in dev via globalThis.
-const g = globalThis as unknown as { __vo2Store?: Store };
+const g = globalThis as unknown as { __vo2Store?: Store; __wahooTokens?: import("./types").WahooTokens };
 function store(): Store {
   if (!g.__vo2Store) {
     g.__vo2Store = {
-      sessions: clone(SEED_SESSIONS),
-      details: clone(SEED_DETAILS),
-      streams: clone(SEED_STREAMS),
-      events: clone(SEED_EVENTS),
+      sessions: [],
+      details: [],
+      streams: [],
+      events: [],
       settings: clone(SEED_SETTINGS),
     };
   }
@@ -64,6 +61,118 @@ export type SessionFilters = {
   type?: SessionType;
   modality?: string;
 };
+
+export type NewSessionData = {
+  name: string;
+  session_date: string;
+  modality: Modality;
+  session_type: SessionType;
+  duration_seconds: number;
+  avg_heartrate: number | null;
+  max_heartrate: number | null;
+  notes?: string | null;
+  wahoo_workout_id?: number | null;
+};
+
+export async function createSession(data: NewSessionData): Promise<Session> {
+  const supabase = getServiceClient();
+  const now = nowISO();
+  if (supabase) {
+    const { data: row, error } = await supabase
+      .from("sessions")
+      .insert({
+        ...data,
+        wahoo_workout_id: data.wahoo_workout_id ?? null,
+        notes: data.notes ?? null,
+        strava_activity_id: null,
+        strava_synced_at: null,
+        deleted_at: null,
+        created_at: now,
+        updated_at: now,
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    return row as Session;
+  }
+  const s: Session = {
+    id: uuid(),
+    strava_activity_id: null,
+    wahoo_workout_id: data.wahoo_workout_id ?? null,
+    name: data.name,
+    session_date: data.session_date,
+    modality: data.modality,
+    session_type: data.session_type,
+    duration_seconds: data.duration_seconds,
+    avg_heartrate: data.avg_heartrate,
+    max_heartrate: data.max_heartrate,
+    notes: data.notes ?? null,
+    strava_synced_at: null,
+    deleted_at: null,
+    created_at: now,
+    updated_at: now,
+  };
+  store().sessions.push(s);
+  return s;
+}
+
+export async function getSessionByWahooId(wahooId: number): Promise<Session | null> {
+  const supabase = getServiceClient();
+  if (supabase) {
+    const { data } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("wahoo_workout_id", wahooId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    return (data as Session) ?? null;
+  }
+  return store().sessions.find((s) => s.wahoo_workout_id === wahooId && !s.deleted_at) ?? null;
+}
+
+export async function upsertHRStream(
+  sessionId: string,
+  samples: HRSamplePoint[],
+  resolution: StreamResolution
+): Promise<HRStream> {
+  const supabase = getServiceClient();
+  const now = nowISO();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from("hr_streams")
+      .upsert(
+        {
+          session_id: sessionId,
+          data: samples,
+          resolution,
+          original_size: samples.length,
+          created_at: now,
+        },
+        { onConflict: "session_id" }
+      )
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data as HRStream;
+  }
+  let stream = store().streams.find((h) => h.session_id === sessionId);
+  if (stream) {
+    stream.data = samples;
+    stream.resolution = resolution;
+    stream.original_size = samples.length;
+  } else {
+    stream = {
+      id: uuid(),
+      session_id: sessionId,
+      data: samples,
+      resolution,
+      original_size: samples.length,
+      created_at: now,
+    };
+    store().streams.push(stream);
+  }
+  return stream;
+}
 
 // --- sessions -------------------------------------------------------------
 

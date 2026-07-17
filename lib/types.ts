@@ -15,6 +15,7 @@ export type HRSamplePoint = { time: number; heartrate: number };
 export type Session = {
   id: string;
   strava_activity_id: number | null;
+  wahoo_workout_id: number | null;
   name: string;
   session_date: string; // ISO date (YYYY-MM-DD)
   modality: Modality;
@@ -55,6 +56,16 @@ export type HRStream = {
 export type StravaTokens = {
   id: string;
   athlete_id: number;
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WahooTokens = {
+  id: string;
+  user_id: number;
   access_token: string;
   refresh_token: string;
   expires_at: string;

@@ -214,6 +214,7 @@ const SPECS: SeedSpec[] = [
 export const SEED_SESSIONS: Session[] = SPECS.map((s, i) => ({
   id: id(i + 1),
   strava_activity_id: s.stravaId,
+  wahoo_workout_id: null,
   name: s.name,
   session_date: s.date,
   modality: s.modality,
